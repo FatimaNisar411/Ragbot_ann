@@ -15,6 +15,12 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+# GPU optimization settings
+if os.getenv("CUDA_VISIBLE_DEVICES"):
+    os.environ["CUDA_VISIBLE_DEVICES"] = os.getenv("CUDA_VISIBLE_DEVICES")
+if os.getenv("OLLAMA_GPU_LAYERS"):
+    os.environ["OLLAMA_GPU_LAYERS"] = os.getenv("OLLAMA_GPU_LAYERS")
+
 print("🔧 Starting ANN RAG setup...")
 
 # Check if CUDA is available
@@ -33,17 +39,23 @@ collection = chroma_client.get_or_create_collection(
     embedding_function=SentenceTransformerEmbeddingFunction("all-MiniLM-L6-v2")
 )
 
-# Check for API keys (multiple free options)
+# Check for API keys and local options
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY")
 HF_API_KEY = os.getenv("HF_API_KEY")  # Hugging Face Inference API
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL")  # e.g., "llama3.2:3b"
 
-# Determine which API to use (prefer free options)
+# Determine which API/model to use (prefer local Ollama if specified)
+use_ollama = OLLAMA_MODEL is not None
 use_groq = GROQ_API_KEY is not None
 use_together = TOGETHER_API_KEY is not None
 use_hf = HF_API_KEY is not None
 
-if use_groq:
+if use_ollama:
+    print(f"🦙 Using local Ollama model: {OLLAMA_MODEL}")
+    generator = None
+    api_provider = "ollama"
+elif use_groq:
     print("🚀 Using FREE Groq API for Llama-3.1 model!")
     generator = None  # Won't need local generator
     api_provider = "groq"
@@ -161,6 +173,42 @@ def call_groq_api(prompt: str) -> str:
     
     return None
 
+def call_ollama_api(prompt: str, model: str) -> str:
+    """Call local Ollama API for Llama inference"""
+    try:
+        print(f"🦙 Calling Ollama API with model: {model}")
+        url = "http://localhost:11434/api/generate"
+        
+        data = {
+            "model": model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "max_tokens": 800
+            }
+        }
+        
+        print("📡 Sending request to Ollama...")
+        response = requests.post(url, json=data, timeout=120)  # Longer timeout for local models
+        
+        if response.status_code == 200:
+            result = response.json()
+            answer = result.get("response", "").strip()
+            print(f"✅ Ollama success! Response length: {len(answer)}")
+            return answer
+        else:
+            print(f"⚠️ Ollama error: {response.status_code} - {response.text}")
+            return None
+            
+    except requests.exceptions.ConnectionError:
+        print("❌ Ollama not running! Start it with: ollama serve")
+        return None
+    except Exception as e:
+        print(f"❌ Ollama API call failed: {e}")
+        return None
+
 def extract_text_from_pdf(pdf_path: str) -> str:
     """Extract text from PDF using multiple methods for best results"""
     text = ""
@@ -274,90 +322,6 @@ def load_documents():
     print(f"✅ Loaded {chunk_id} chunks from {len(all_files)} files ({len(txt_files)} txt, {len(pdf_files)} pdf)")
     _loaded = True
 
-def answer_question(query: str) -> str:
-    global use_groq, generator, model_name  # Access global variables
-    
-    # Retrieve more relevant documents for better context
-    results = collection.query(query_texts=[query], n_results=5)  # Increased from 3
-    retrieved_docs = "\n\n".join(results["documents"][0])
-    
-    # Get source files for context
-    sources = [meta.get("source", "Unknown") for meta in results.get("metadatas", [[]])[0]]
-    
-    # Create a better prompt for complete explanations
-    prompt = f"""You are an expert in neural networks. Based on the documentation below, provide a complete and detailed explanation.
-
-Neural Network Documentation:
-{retrieved_docs}
-
-Question: {query}
-
-Instructions: Provide a comprehensive answer that fully explains the concept. Include details about how it works, why it's important, and any key technical aspects mentioned in the documentation. Make sure to complete your explanation fully.
-
-Complete Answer:"""
-
-    try:
-        answer = None
-        
-        # First try Groq API if available (FREE)
-        if use_groq:
-            print("🚀 Using FREE Groq API...")
-            print("📝 DEBUG - Prompt being sent:")
-            print("=" * 80)
-            print(prompt)
-            print("=" * 80)
-            answer = call_groq_api(prompt)
-            if answer:
-                print("✅ Got response from Groq API")
-            else:
-                print("⚠️ Groq API failed, falling back to local model...")
-        
-        # Use local model if Groq not available or failed
-        if not answer and generator:
-            print("🏠 Using local model...")
-            # Check if we're using Phi-3 (Llama) or T5
-            if "phi-3" in model_name.lower():
-                # For Phi-3 Llama model - use text generation
-                response = generator(
-                    prompt, 
-                    max_new_tokens=300,  # Generate new tokens
-                    do_sample=True, 
-                    temperature=0.7,
-                    pad_token_id=tokenizer.eos_token_id
-                )[0]['generated_text']
-                answer = response.strip()
-            else:
-                # For T5 model - use text2text generation
-                response = generator(
-                    prompt, 
-                    max_length=500,
-                    min_length=100,
-                    do_sample=True, 
-                    temperature=0.7,
-                    no_repeat_ngram_size=3
-                )[0]['generated_text']
-                answer = response.strip()
-        
-        # Final fallback if no answer was generated
-        if not answer:
-            answer = f"Based on the documentation: {retrieved_docs[:400]}..."
-    
-    except Exception as e:
-        print(f"❌ Error generating response: {e}")
-        answer = f"Based on the documentation, here's what I found: {retrieved_docs[:400]}..."
-    
-    # Format the final response
-    source_info = f"\n\n📁 Sources: {', '.join(set(sources))}" if sources else ""
-    
-    return f"""🧠 **ANN Expert Bot**
-
-❓ **Your Question:** {query}
-
-💡 **Answer:** {answer}
-
-📚 **Referenced Documentation:**
-{retrieved_docs[:500]}{'...' if len(retrieved_docs) > 500 else ''}{source_info}"""
-
 def answer_question_structured(query: str) -> dict:
     """Return structured answer with sources separated"""
     global use_groq, generator, model_name
@@ -383,8 +347,17 @@ Provide a clear, detailed answer without any extra formatting, emojis, or source
     try:
         answer = None
         
-        # First try Groq API if available (FREE)
-        if use_groq:
+        # First try local Ollama if specified
+        if use_ollama:
+            print("🦙 Using local Ollama model...")
+            answer = call_ollama_api(prompt, OLLAMA_MODEL)
+            if answer:
+                print("✅ Got response from Ollama")
+            else:
+                print("⚠️ Ollama failed, falling back to Groq API...")
+        
+        # Try Groq API if Ollama not available or failed
+        if not answer and use_groq:
             print("🚀 Using FREE Groq API...")
             answer = call_groq_api(prompt)
             if answer:
@@ -392,7 +365,7 @@ Provide a clear, detailed answer without any extra formatting, emojis, or source
             else:
                 print("⚠️ Groq API failed, falling back to local model...")
         
-        # Use local model if Groq not available or failed
+        # Use local model if both Ollama and Groq not available or failed
         if not answer and generator:
             print("🏠 Using local model...")
             # Check if we're using Phi-3 (Llama) or T5
