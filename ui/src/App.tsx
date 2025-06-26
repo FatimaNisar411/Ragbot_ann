@@ -22,8 +22,26 @@ function App() {
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set())
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    // Check if user has a saved preference, otherwise use system preference
+    const savedTheme = localStorage.getItem('theme')
+    if (savedTheme) {
+      return savedTheme === 'dark'
+    }
+    return window.matchMedia('(prefers-color-scheme: dark)').matches
+  })
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Apply dark mode class to body
+  useEffect(() => {
+    document.body.classList.toggle('dark-mode', isDarkMode)
+    localStorage.setItem('theme', isDarkMode ? 'dark' : 'light')
+  }, [isDarkMode])
+
+  const toggleDarkMode = () => {
+    setIsDarkMode(!isDarkMode)
+  }
 
   const scrollToBottom = () => {
     if (chatContainerRef.current) {
@@ -130,6 +148,13 @@ function App() {
   return (
     <div className="container">
       <div className="header">
+        <button 
+          className="theme-toggle" 
+          onClick={toggleDarkMode}
+          aria-label="Toggle dark mode"
+        >
+          {isDarkMode ? '☀️' : '🌙'}
+        </button>
         <h1>RAG Bot</h1>
         <p>Ask questions about your documents</p>
       </div>
@@ -175,11 +200,10 @@ function App() {
                         {message.retrieved_docs.map((doc, index) => (
                           <div 
                             key={index} 
-                            className="source-item" 
+                            className="source-item retrieved-doc" 
                             style={{ 
                               marginBottom: '8px', 
                               padding: '8px', 
-                              background: '#f0f0f0', 
                               borderRadius: '4px', 
                               whiteSpace: 'pre-wrap', 
                               fontFamily: 'inherit' 
