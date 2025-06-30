@@ -17,9 +17,9 @@ print("📚 Data Loader Module Initialized")
 print("📌 Loading embedding model...")
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
-# Setup ChromaDB
-print("📦 Setting up ChromaDB...")
-chroma_client = chromadb.Client()
+# Setup ChromaDB with persistent storage
+print("📦 Setting up ChromaDB with persistent storage...")
+chroma_client = chromadb.PersistentClient(path="./chroma_db")
 collection = chroma_client.get_or_create_collection(
     name="ann_docs",
     embedding_function=SentenceTransformerEmbeddingFunction("all-MiniLM-L6-v2")
@@ -127,6 +127,17 @@ def process_file(file_path: str, filename: str) -> list:
 def load_documents():
     """Load all documents from the data directory into ChromaDB"""
     global _loaded
+    
+    # Check if documents are already persisted
+    try:
+        existing_count = collection.count()
+        if existing_count > 0:
+            print(f"📚 Found {existing_count} existing chunks in persistent storage")
+            _loaded = True
+            return
+    except Exception as e:
+        print(f"⚠️ Error checking existing documents: {e}")
+    
     if _loaded:
         print("📚 Documents already loaded")
         return

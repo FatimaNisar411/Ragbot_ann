@@ -32,9 +32,9 @@ TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY")
 HF_API_KEY = os.getenv("HF_API_KEY")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL")
 
-# Determine which API/model to use (prefer local Ollama if specified)
-use_ollama = OLLAMA_MODEL is not None
+# Determine which API/model to use (prefer Groq API for Llama 3.1:8b)
 use_groq = GROQ_API_KEY is not None
+use_ollama = OLLAMA_MODEL is not None
 use_together = TOGETHER_API_KEY is not None
 use_hf = HF_API_KEY is not None
 
@@ -43,12 +43,12 @@ generator = None
 model_name = None
 tokenizer = None
 
-if use_ollama:
-    print(f"🦙 Using local Ollama model: {OLLAMA_MODEL}")
-    api_provider = "ollama"
-elif use_groq:
-    print("🚀 Using FREE Groq API for Llama-3.1 model!")
+if use_groq:
+    print("🚀 Using FREE Groq API for Llama-3.1-8b-instant!")
     api_provider = "groq"
+elif use_ollama:
+    print(f"🦙 Using local Ollama model as fallback: {OLLAMA_MODEL}")
+    api_provider = "ollama"
 elif use_together:
     print("🚀 Using FREE Together.ai API for Llama models!")
     api_provider = "together"
@@ -199,25 +199,25 @@ def generate_response(prompt: str) -> str:
     answer = None
     
     try:
-        # First try local Ollama if specified
-        if use_ollama:
-            print("🦙 Using local Ollama model...")
-            answer = call_ollama_api(prompt, OLLAMA_MODEL)
-            if answer:
-                print("✅ Got response from Ollama")
-            else:
-                print("⚠️ Ollama failed, falling back to Groq API...")
-        
-        # Try Groq API if Ollama not available or failed
-        if not answer and use_groq:
-            print("🚀 Using FREE Groq API...")
+        # First try Groq API (primary choice for Llama 3.1:8b)
+        if use_groq:
+            print("🚀 Using FREE Groq API for Llama 3.1:8b...")
             answer = call_groq_api(prompt)
             if answer:
                 print("✅ Got response from Groq API")
             else:
-                print("⚠️ Groq API failed, falling back to local model...")
+                print("⚠️ Groq API failed, falling back to local Ollama...")
         
-        # Use local model if both Ollama and Groq not available or failed
+        # Try local Ollama if Groq not available or failed
+        if not answer and use_ollama:
+            print("🦙 Using local Ollama model as fallback...")
+            answer = call_ollama_api(prompt, OLLAMA_MODEL)
+            if answer:
+                print("✅ Got response from Ollama")
+            else:
+                print("⚠️ Ollama failed, falling back to local model...")
+        
+        # Use local model if both Groq and Ollama not available or failed
         if not answer and generator:
             print("🏠 Using local model...")
             if "phi-3" in model_name.lower():
