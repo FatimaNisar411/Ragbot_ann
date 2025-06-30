@@ -6,10 +6,12 @@ This is a React project built with Vite and TypeScript for a RAG (Retrieval-Augm
 
 ## Project Context
 - Modern React application with TypeScript
-- Clean, minimal UI design following the original HTML template
-- Chat interface for interacting with a RAG bot
+- Clean, minimal UI design with glassmorphism effects and dark mode
+- Chat interface for interacting with an intelligent RAG bot
+- Backend handles automatic context injection and memory management
 - Uses modern React patterns like hooks and functional components
-- Styled with CSS modules or styled-components for component-scoped styling
+- Styled with custom CSS and neutral gray color scheme
+- ChatGPT-inspired dark mode with smooth theme transitions
 
 ## Code Style Guidelines
 - Use functional components with React hooks
@@ -18,3 +20,17 @@ This is a React project built with Vite and TypeScript for a RAG (Retrieval-Augm
 - Implement responsive design principles
 - Keep components focused and reusable
 - Use semantic HTML elements for accessibility
+
+## Backend Intelligence
+- **Context Injection**: Backend automatically adds recent Q&A context to follow-up questions
+- **Memory Management**: Keeps last 10 exchanges, auto-cleans older conversations
+- **Smart Prompting**: LLM sees both current question + conversation history
+- **Fallback Handling**: Works with or without conversation IDs seamlessly
+
+## API Integration
+- **Main endpoint**: `http://127.0.0.1:5000/ask`
+- **Request format**: `{ query: string, conversation_id?: string }`
+- **Response format**: `{ answer: string, sources?: string[], retrieved_docs?: string[], conversation_id?: string }`
+- **Clear endpoint**: `/clear-conversation` to reset conversation context
+- **Frontend responsibilities**: Store conversationId, send with requests, update from responses
+- **Backend handles**: All contextualization, memory management, and intelligent prompting

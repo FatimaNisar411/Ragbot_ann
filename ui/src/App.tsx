@@ -22,6 +22,7 @@ function App() {
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set())
+  const [conversationId, setConversationId] = useState<string | null>(null)
   const [isDarkMode, setIsDarkMode] = useState(() => {
     // Check if user has a saved preference, otherwise use system preference
     const savedTheme = localStorage.getItem('theme')
@@ -65,6 +66,43 @@ function App() {
     })
   }
 
+  const clearConversation = async () => {
+    try {
+      if (conversationId) {
+        const response = await fetch('http://127.0.0.1:5000/clear-conversation', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ conversation_id: conversationId })
+        })
+        
+        if (response.ok) {
+          setConversationId(null)
+        }
+      } else {
+        // If no conversation ID, just reset locally
+        setConversationId(null)
+      }
+      
+      // Reset messages to just the welcome message
+      setMessages([{
+        id: 'welcome',
+        type: 'bot',
+        content: "Hello! I'm ready to answer questions about the documents in your knowledge base. What would you like to know?"
+      }])
+    } catch (error) {
+      console.error('Error clearing conversation:', error)
+      // Still reset locally even if the server call fails
+      setConversationId(null)
+      setMessages([{
+        id: 'welcome',
+        type: 'bot',
+        content: "Hello! I'm ready to answer questions about the documents in your knowledge base. What would you like to know?"
+      }])
+    }
+  }
+
   const askQuestion = async () => {
     const question = inputValue.trim()
     if (!question || isLoading) return
@@ -92,12 +130,17 @@ function App() {
     setIsLoading(true)
 
     try {
+      const requestBody: { query: string; conversation_id?: string } = { query: question }
+      if (conversationId) {
+        requestBody.conversation_id = conversationId
+      }
+
       const response = await fetch('http://127.0.0.1:5000/ask', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query: question })
+        body: JSON.stringify(requestBody)
       })
 
       if (!response.ok) {
@@ -105,6 +148,11 @@ function App() {
       }
 
       const data = await response.json()
+
+      // Update conversation ID if provided by backend
+      if (data.conversation_id) {
+        setConversationId(data.conversation_id)
+      }
 
       // Replace loading message with actual response
       setMessages(prev => prev.map(msg => 
@@ -148,13 +196,25 @@ function App() {
   return (
     <div className="container">
       <div className="header">
-        <button 
-          className="theme-toggle" 
-          onClick={toggleDarkMode}
-          aria-label="Toggle dark mode"
-        >
-          {isDarkMode ? '☀️' : '🌙'}
-        </button>
+        <div className="header-controls">
+          <button 
+            className="theme-toggle" 
+            onClick={toggleDarkMode}
+            aria-label="Toggle dark mode"
+          >
+            {isDarkMode ? '☀️' : '🌙'}
+          </button>
+          {conversationId && (
+            <button 
+              className="clear-button" 
+              onClick={clearConversation}
+              aria-label="Clear conversation"
+              title="Start a new conversation"
+            >
+              🗑️
+            </button>
+          )}
+        </div>
         <h1>RAG Bot</h1>
         <p>Ask questions about your documents</p>
       </div>

@@ -62,24 +62,60 @@ app.add_middleware(
 
 class Question(BaseModel):
     query: str
-
+    conversation_id: str = None  # Optional conversation ID for history tracking
+    
 class Answer(BaseModel):
     answer: str
     sources: list = []
     retrieved_docs: list = []
+    conversation_id: str = None
+
+# In-memory conversation storage (could be replaced with database)
+conversation_history = {}
 
 # --- Serve the chat interface ---
 @app.get("/")
 def home():
     return FileResponse("chat.html")
 
-# --- /ask endpoint with metrics ---
+# --- /ask endpoint with conversation history ---
 @app.post("/ask")
 @REQUEST_TIME.time()
 def ask(question: Question):
     REQUEST_COUNT.inc()
     try:
-        response_data = answer_question_structured(question.query)
+        # Generate conversation ID if not provided
+        conversation_id = question.conversation_id or f"conv_{int(time.time())}"
+        
+        # Get conversation history
+        history = conversation_history.get(conversation_id, [])
+        
+        # Add context from conversation history
+        contextualized_query = question.query
+        if history:
+            # Add recent context (last 2-3 exchanges)
+            recent_context = history[-4:]  # Last 2 Q&A pairs
+            context_summary = ""
+            for i in range(0, len(recent_context), 2):
+                if i + 1 < len(recent_context):
+                    context_summary += f"Previous Q: {recent_context[i]}\nPrevious A: {recent_context[i+1][:200]}...\n\n"
+            
+            if context_summary:
+                contextualized_query = f"Conversation context:\n{context_summary}Current question: {question.query}"
+        
+        # Get response with contextualized query
+        response_data = answer_question_structured(contextualized_query)
+        
+        # Update conversation history
+        conversation_history[conversation_id] = history + [question.query, response_data["answer"]]
+        
+        # Limit history size (keep last 10 exchanges = 20 items)
+        if len(conversation_history[conversation_id]) > 20:
+            conversation_history[conversation_id] = conversation_history[conversation_id][-20:]
+        
+        # Add conversation ID to response
+        response_data["conversation_id"] = conversation_id
+        
         return response_data
     except Exception as e:
         ERROR_COUNT.inc()
@@ -122,6 +158,37 @@ def system_info():
             "status": "System info unavailable",
             "error": str(e),
             "model": os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+        }
+
+@app.post("/clear-conversation")
+def clear_conversation(conversation_id: str = None):
+    """Clear conversation history for a specific conversation or all conversations"""
+    if conversation_id:
+        if conversation_id in conversation_history:
+            del conversation_history[conversation_id]
+            return {"message": f"Conversation {conversation_id} cleared"}
+        else:
+            return {"message": f"Conversation {conversation_id} not found"}
+    else:
+        conversation_history.clear()
+        return {"message": "All conversations cleared"}
+
+@app.get("/conversation-info")
+def conversation_info(conversation_id: str = None):
+    """Get information about conversations"""
+    if conversation_id:
+        history = conversation_history.get(conversation_id, [])
+        return {
+            "conversation_id": conversation_id,
+            "exists": conversation_id in conversation_history,
+            "message_count": len(history),
+            "last_messages": history[-4:] if history else []  # Last 2 Q&A pairs
+        }
+    else:
+        return {
+            "total_conversations": len(conversation_history),
+            "conversation_ids": list(conversation_history.keys()),
+            "total_messages": sum(len(hist) for hist in conversation_history.values())
         }
 
 

@@ -251,8 +251,30 @@ def generate_response(prompt: str) -> str:
     return answer
 
 def create_prompt(query: str, retrieved_docs: str) -> str:
-    """Create a well-formatted prompt for the LLM"""
-    return f"""Based on the following documentation, answer the question accurately and comprehensively. If the question is not related to the documentation, answer based on your general knowledge.
+    """Create a well-formatted prompt for the LLM with conversation awareness"""
+    
+    # Check if this is a contextualized query (contains conversation context)
+    if "Conversation context:" in query and "Current question:" in query:
+        # Split contextualized query
+        parts = query.split("Current question:", 1)
+        context_part = parts[0].replace("Conversation context:", "").strip()
+        actual_question = parts[1].strip()
+        
+        return f"""Based on the following documentation and conversation context, answer the question accurately and comprehensively. Use the conversation context to understand references like "it", "them", "this", etc.
+
+Documentation:
+{retrieved_docs}
+
+Conversation Context:
+{context_part}
+
+Current Question: {actual_question}
+
+Provide a clear, detailed answer that takes into account the conversation context. Reference previous topics when relevant:"""
+    
+    else:
+        # Standard prompt for new conversations
+        return f"""Based on the following documentation, answer the question accurately and comprehensively. If the question is not related to the documentation, answer based on your general knowledge.
 
 Documentation:
 {retrieved_docs}
