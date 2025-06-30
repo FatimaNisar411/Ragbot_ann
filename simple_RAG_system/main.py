@@ -1,9 +1,10 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from rag import answer_question_structured, load_documents
+from data_loader import process_uploaded_file, create_session_collection
 from prometheus_client import start_http_server, Summary, Counter
 from contextlib import asynccontextmanager
 import time
@@ -73,6 +74,10 @@ class Answer(BaseModel):
 # In-memory conversation storage (could be replaced with database)
 conversation_history = {}
 
+# Session-based document storage
+session_documents = {}  # {conversation_id: [uploaded_file_info]}
+session_collections = {}  # {conversation_id: chromadb_collection}
+
 # --- Serve the chat interface ---
 @app.get("/")
 def home():
@@ -92,7 +97,12 @@ def ask(question: Question):
         
         # Add context from conversation history
         contextualized_query = question.query
-        if history:
+        
+        # Check if user wants to exclude previous context
+        exclusion_keywords = ["not", "only about", "exclude", "don't mention", "without", "ignore previous"]
+        should_exclude_context = any(keyword in question.query.lower() for keyword in exclusion_keywords)
+        
+        if history and not should_exclude_context:
             # Add recent context (last 2-3 exchanges)
             recent_context = history[-4:]  # Last 2 Q&A pairs
             context_summary = ""
@@ -102,9 +112,11 @@ def ask(question: Question):
             
             if context_summary:
                 contextualized_query = f"Conversation context:\n{context_summary}Current question: {question.query}"
+        elif should_exclude_context:
+            print(f"🚫 Excluding conversation context due to user instruction in: {question.query}")
         
-        # Get response with contextualized query
-        response_data = answer_question_structured(contextualized_query)
+        # Get response with contextualized query and conversation ID
+        response_data = answer_question_structured(contextualized_query, conversation_id)
         
         # Update conversation history
         conversation_history[conversation_id] = history + [question.query, response_data["answer"]]
@@ -162,16 +174,40 @@ def system_info():
 
 @app.post("/clear-conversation")
 def clear_conversation(conversation_id: str = None):
-    """Clear conversation history for a specific conversation or all conversations"""
+    """Clear conversation history and session documents for a specific conversation or all conversations"""
+    from data_loader import cleanup_session_collection
+    
     if conversation_id:
+        cleared_items = []
+        
+        # Clear conversation history
         if conversation_id in conversation_history:
             del conversation_history[conversation_id]
-            return {"message": f"Conversation {conversation_id} cleared"}
+            cleared_items.append("conversation history")
+        
+        # Clear session documents
+        if conversation_id in session_documents:
+            del session_documents[conversation_id]
+            cleared_items.append("session documents")
+        
+        # Clean up session collection
+        if cleanup_session_collection(conversation_id):
+            cleared_items.append("document chunks")
+        
+        if cleared_items:
+            return {"message": f"Cleared {', '.join(cleared_items)} for conversation {conversation_id}"}
         else:
             return {"message": f"Conversation {conversation_id} not found"}
     else:
+        # Clear all conversations and session documents
         conversation_history.clear()
-        return {"message": "All conversations cleared"}
+        
+        # Clean up all session collections
+        for conv_id in list(session_documents.keys()):
+            cleanup_session_collection(conv_id)
+        
+        session_documents.clear()
+        return {"message": "All conversations and session documents cleared"}
 
 @app.get("/conversation-info")
 def conversation_info(conversation_id: str = None):
@@ -190,6 +226,62 @@ def conversation_info(conversation_id: str = None):
             "conversation_ids": list(conversation_history.keys()),
             "total_messages": sum(len(hist) for hist in conversation_history.values())
         }
+
+@app.post("/upload-document")
+async def upload_document(
+    file: UploadFile = File(...),
+    conversation_id: str = None
+):
+    """Upload a document for session-specific Q&A"""
+    try:
+        # Generate conversation ID if not provided
+        if not conversation_id:
+            conversation_id = f"conv_{int(time.time())}"
+        
+        # Validate file type
+        allowed_extensions = ['.pdf', '.txt', '.docx']
+        file_extension = os.path.splitext(file.filename)[1].lower()
+        if file_extension not in allowed_extensions:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"File type {file_extension} not supported. Allowed: {allowed_extensions}"
+            )
+        
+        # Read file content
+        file_content = await file.read()
+        if len(file_content) == 0:
+            raise HTTPException(status_code=400, detail="Empty file uploaded")
+        
+        # Process the uploaded file
+        result = process_uploaded_file(file_content, file.filename, conversation_id)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result["message"])
+        
+        # Store session document info
+        if conversation_id not in session_documents:
+            session_documents[conversation_id] = []
+        
+        session_documents[conversation_id].append({
+            "filename": file.filename,
+            "upload_time": time.time(),
+            "chunks_added": result["chunks_added"]
+        })
+        
+        return {
+            "success": True,
+            "message": result["message"],
+            "conversation_id": conversation_id,
+            "filename": file.filename,
+            "chunks_added": result["chunks_added"],
+            "total_session_docs": len(session_documents[conversation_id])
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        ERROR_COUNT.inc()
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 
 if __name__ == "__main__":

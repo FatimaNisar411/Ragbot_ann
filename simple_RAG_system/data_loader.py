@@ -213,6 +213,120 @@ def get_document_stats():
             "error": str(e)
         }
 
+def create_session_collection(conversation_id: str):
+    """Create a temporary collection for a specific conversation session"""
+    try:
+        session_collection_name = f"session_{conversation_id}"
+        session_collection = chroma_client.get_or_create_collection(
+            name=session_collection_name,
+            embedding_function=SentenceTransformerEmbeddingFunction("all-MiniLM-L6-v2")
+        )
+        print(f"✅ Created session collection: {session_collection_name}")
+        return session_collection
+    except Exception as e:
+        print(f"❌ Error creating session collection: {e}")
+        return None
+
+def process_uploaded_file(file_content: bytes, filename: str, conversation_id: str) -> dict:
+    """Process an uploaded file for a specific conversation session"""
+    try:
+        import tempfile
+        import io
+        
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{filename}") as temp_file:
+            temp_file.write(file_content)
+            temp_path = temp_file.name
+        
+        try:
+            # Process the file
+            chunks = process_file(temp_path, filename)
+            
+            if not chunks:
+                return {"success": False, "message": f"No content extracted from {filename}"}
+            
+            # Get or create session collection
+            session_collection = create_session_collection(conversation_id)
+            if not session_collection:
+                return {"success": False, "message": "Failed to create session collection"}
+            
+            # Add chunks to session collection
+            chunk_id = 0
+            for chunk_data in chunks:
+                session_collection.add(
+                    documents=[chunk_data["content"]], 
+                    ids=[f"session_{conversation_id}_doc_{chunk_id}"],
+                    metadatas=[{
+                        "source": chunk_data["source"],
+                        "type": chunk_data["type"],
+                        "session": conversation_id,
+                        "uploaded": True
+                    }]
+                )
+                chunk_id += 1
+            
+            return {
+                "success": True, 
+                "message": f"Successfully processed {filename}",
+                "chunks_added": len(chunks),
+                "filename": filename
+            }
+            
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+                
+    except Exception as e:
+        print(f"❌ Error processing uploaded file {filename}: {e}")
+        return {"success": False, "message": f"Error processing {filename}: {str(e)}"}
+
+def get_relevant_chunks_with_session(query: str, conversation_id: str = None, n_results: int = 5):
+    """Retrieve relevant chunks from both main collection and session collection"""
+    all_results = {"documents": [], "metadatas": [], "ids": []}
+    
+    # Get chunks from main collection (50% of results)
+    main_results_count = max(1, n_results // 2)
+    main_results = collection.query(query_texts=[query], n_results=main_results_count)
+    
+    if main_results["documents"] and main_results["documents"][0]:
+        all_results["documents"].extend(main_results["documents"][0])
+        all_results["metadatas"].extend(main_results.get("metadatas", [[]])[0])
+        all_results["ids"].extend(main_results.get("ids", [[]])[0])
+    
+    # Get chunks from session collection if available (50% of results)
+    if conversation_id:
+        try:
+            session_collection_name = f"session_{conversation_id}"
+            session_collection = chroma_client.get_collection(name=session_collection_name)
+            
+            session_results_count = n_results - len(all_results["documents"])
+            if session_results_count > 0:
+                session_results = session_collection.query(query_texts=[query], n_results=session_results_count)
+                
+                if session_results["documents"] and session_results["documents"][0]:
+                    all_results["documents"].extend(session_results["documents"][0])
+                    all_results["metadatas"].extend(session_results.get("metadatas", [[]])[0])
+                    all_results["ids"].extend(session_results.get("ids", [[]])[0])
+                    
+        except Exception as e:
+            print(f"⚠️ No session collection found for {conversation_id}: {e}")
+    
+    return all_results
+
+def cleanup_session_collection(conversation_id: str):
+    """Clean up session collection when conversation ends"""
+    try:
+        session_collection_name = f"session_{conversation_id}"
+        chroma_client.delete_collection(name=session_collection_name)
+        print(f"🗑️ Cleaned up session collection: {session_collection_name}")
+        return True
+    except Exception as e:
+        print(f"⚠️ Error cleaning up session collection: {e}")
+        return False
+
 if __name__ == "__main__":
     # Test the data loader
     print("🧪 Testing data loader...")

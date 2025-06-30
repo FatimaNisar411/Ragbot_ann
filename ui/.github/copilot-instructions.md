@@ -8,7 +8,9 @@ This is a React project built with Vite and TypeScript for a RAG (Retrieval-Augm
 - Modern React application with TypeScript
 - Clean, minimal UI design with glassmorphism effects and dark mode
 - Chat interface for interacting with an intelligent RAG bot
+- Document upload functionality for personalized Q&A on user's own documents
 - Backend handles automatic context injection and memory management
+- Session-specific document management with hybrid knowledge search
 - Uses modern React patterns like hooks and functional components
 - Styled with custom CSS and neutral gray color scheme
 - ChatGPT-inspired dark mode with smooth theme transitions
@@ -31,6 +33,8 @@ This is a React project built with Vite and TypeScript for a RAG (Retrieval-Augm
 - **Main endpoint**: `http://127.0.0.1:5000/ask`
 - **Request format**: `{ query: string, conversation_id?: string }`
 - **Response format**: `{ answer: string, sources?: string[], retrieved_docs?: string[], conversation_id?: string }`
-- **Clear endpoint**: `/clear-conversation` to reset conversation context
-- **Frontend responsibilities**: Store conversationId, send with requests, update from responses
-- **Backend handles**: All contextualization, memory management, and intelligent prompting
+- **Upload endpoint**: `/upload-document` with FormData for file uploads
+- **Session docs endpoint**: `/session-documents` to list uploaded documents
+- **Clear endpoint**: `/clear-conversation` to reset conversation context and uploaded docs
+- **Frontend responsibilities**: Store conversationId, handle file uploads, distinguish source types, send with requests, update from responses
+- **Backend handles**: All contextualization, memory management, document storage, and intelligent prompting

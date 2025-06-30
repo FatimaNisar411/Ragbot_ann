@@ -5,14 +5,17 @@ A modern React application built with Vite and TypeScript for interacting with a
 ## Features
 
 - **Smart Conversation Management**: Automatic context injection and memory management
+- **Document Upload**: Upload your own PDF, TXT, MD, DOC, or DOCX files for personalized Q&A
+- **Hybrid Knowledge**: Combines base knowledge with your uploaded documents seamlessly
+- **Session Isolation**: Each conversation has its own uploaded documents
 - **Clean Chat Interface**: Modern, minimal design with glassmorphism effects
 - **Dark Mode**: ChatGPT-inspired dark theme with smooth transitions
-- **Source Citations**: Expandable source files and retrieved document snippets
+- **Enhanced Source Citations**: Distinguishes between uploaded documents (📎) and base documents (📄)
 - **Context Persistence**: Conversations maintain context across multiple questions
-- **Conversation Reset**: Clear conversation history and start fresh
+- **Conversation Reset**: Clear conversation history and uploaded documents
 - **Responsive Design**: Works seamlessly on desktop and mobile
 - **TypeScript**: Full type safety and modern React patterns
-- **Real-time Feedback**: Loading states, error handling, and typing indicators
+- **Real-time Feedback**: Loading states, error handling, and upload progress
 
 ## Backend Intelligence
 
@@ -62,7 +65,7 @@ npm run preview
 
 ## API Integration
 
-The app integrates with a backend API that provides intelligent conversation management:
+The app integrates with a backend API that provides intelligent conversation management and document upload capabilities:
 
 ### Main Endpoint: `/ask`
 ```json
@@ -77,9 +80,43 @@ POST http://127.0.0.1:5000/ask
 ```json
 {
   "answer": "The response text",
-  "sources": ["file1.pdf", "file2.txt"],
+  "sources": ["file1.pdf", "📎 uploaded_doc.pdf"],
   "retrieved_docs": ["Document content snippets..."],
   "conversation_id": "generated-or-existing-conversation-id"
+}
+```
+
+### Document Upload: `/upload-document`
+```json
+POST http://127.0.0.1:5000/upload-document
+FormData with:
+- file: The document file
+- conversation_id: (optional) existing conversation ID
+```
+
+**Response:**
+```json
+{
+  "message": "Document uploaded successfully",
+  "filename": "uploaded_doc.pdf",
+  "conversation_id": "conversation-id"
+}
+```
+
+### Session Documents: `/session-documents`
+```json
+GET http://127.0.0.1:5000/session-documents?conversation_id=conv_id
+```
+
+**Response:**
+```json
+{
+  "documents": [
+    {
+      "filename": "uploaded_doc.pdf",
+      "upload_time": "2025-06-30T12:00:00Z"
+    }
+  ]
 }
 ```
 
@@ -93,14 +130,19 @@ POST http://127.0.0.1:5000/clear-conversation
 
 ### Frontend Responsibilities
 - Store and manage conversation IDs in React state
+- Handle file uploads with FormData
+- Display uploaded vs base document sources differently
 - Send conversation IDs with each request for context continuity
 - Update conversation IDs from backend responses
-- Handle conversation clearing and reset
+- Handle conversation clearing and document cleanup
 
 ### Backend Intelligence
 - Automatically injects recent Q&A context into follow-up questions
 - Manages conversation memory (last 10 exchanges)
 - Provides intelligent prompting with conversation history
+- Handles session-specific document upload and storage
+- Combines base knowledge with uploaded documents in responses
+- Provides hybrid search across both base and uploaded documents
 - Handles conversation lifecycle and cleanup automatically
 
 ## Project Structure
@@ -127,3 +169,14 @@ src/
 - Conversation IDs are managed automatically for seamless context continuity
 - The clear conversation button (🗑️) appears only when a conversation is active
 - All API calls include proper error handling and loading states
+- Document upload supports PDF, TXT, MD, DOC, and DOCX files
+- Uploaded documents are session-specific and automatically cleaned up
+- Source citations clearly distinguish between uploaded (📎) and base (📄) documents
+
+## Usage
+
+1. **Start a conversation**: Ask any question about the base knowledge
+2. **Upload documents**: Click the 📎 button to upload your own documents
+3. **Ask about uploads**: Questions will search both base knowledge and your uploaded files
+4. **View sources**: Expand sources to see which documents were referenced
+5. **Clear session**: Use the 🗑️ button to reset conversation and remove uploaded documents

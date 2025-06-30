@@ -396,7 +396,8 @@ body.dark-mode {
 
 .input-container {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 8px;
   background: rgba(255, 255, 255, 0.95);
   border: none;
   border-radius: 24px;
@@ -423,10 +424,47 @@ body.dark-mode {
   border-color: rgba(86, 88, 105, 0.3);
 }
 
+.attach-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  opacity: 0.6;
+  transition: all 0.3s ease;
+  margin-left: 4px;
+}
+
+.attach-button:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.05);
+  transform: scale(1.1);
+}
+
+.dark-mode .attach-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.attach-button.uploading {
+  opacity: 0.5;
+  cursor: not-allowed;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.8; }
+}
+
 .question-input {
   flex: 1;
   border: none;
-  padding: 16px 20px;
+  padding: 16px 12px;
   font-size: 15px;
   outline: none;
   background: transparent;
@@ -498,6 +536,82 @@ body.dark-mode {
 
 .dark-mode .ask-button:disabled {
   background: #374151;
+}
+
+/* Uploaded Documents Display */
+.uploaded-docs-display {
+  margin-top: 20px;
+  padding: 16px;
+  background: rgba(66, 153, 225, 0.1);
+  border-radius: 12px;
+  border-left: 4px solid #4299e1;
+}
+
+.dark-mode .uploaded-docs-display {
+  background: rgba(66, 153, 225, 0.15);
+}
+
+.uploaded-docs-display h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  color: #2d3748;
+  font-weight: 600;
+}
+
+.dark-mode .uploaded-docs-display h4 {
+  color: #e2e8f0;
+}
+
+.uploaded-docs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.uploaded-doc-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.dark-mode .uploaded-doc-item {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.upload-time {
+  font-size: 12px;
+  opacity: 0.7;
+  font-style: italic;
+}
+
+/* Enhanced Source Display */
+.uploaded-source {
+  background: rgba(66, 153, 225, 0.1) !important;
+  border-left: 3px solid #4299e1 !important;
+}
+
+.dark-mode .uploaded-source {
+  background: rgba(66, 153, 225, 0.15) !important;
+}
+
+.base-source {
+  background: rgba(113, 128, 150, 0.1) !important;
+  border-left: 3px solid #718096 !important;
+}
+
+.dark-mode .base-source {
+  background: rgba(160, 174, 192, 0.1) !important;
+}
+
+.source-type {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-left: 8px;
+  font-style: italic;
 }
 
 /* Responsive Design */

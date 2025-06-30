@@ -260,7 +260,21 @@ def create_prompt(query: str, retrieved_docs: str) -> str:
         context_part = parts[0].replace("Conversation context:", "").strip()
         actual_question = parts[1].strip()
         
-        return f"""Based on the following documentation and conversation context, answer the question accurately and comprehensively. Use the conversation context to understand references like "it", "them", "this", etc.
+        # Check if the question contains explicit exclusions (like "not", "only about", "exclude")
+        exclusion_keywords = ["not", "only about", "exclude", "don't mention", "without"]
+        has_exclusion = any(keyword in actual_question.lower() for keyword in exclusion_keywords)
+        
+        if has_exclusion:
+            return f"""Based on the following documentation, answer the question accurately and comprehensively. Pay careful attention to any exclusions or specific limitations mentioned in the question.
+
+Documentation:
+{retrieved_docs}
+
+Question: {actual_question}
+
+IMPORTANT: Follow the specific instructions in the question exactly. If the question asks to exclude certain topics or mentions "not" or "only about", respect those constraints completely. Do not include information that was explicitly excluded."""
+        else:
+            return f"""Based on the following documentation and conversation context, answer the question accurately and comprehensively. Use the conversation context to understand references like "it", "them", "this", etc.
 
 Documentation:
 {retrieved_docs}

@@ -11,18 +11,25 @@ interface Message {
   isError?: boolean
 }
 
+interface UploadedDocument {
+  filename: string
+  upload_time: string
+}
+
 function App() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
       type: 'bot',
-      content: "Hello! I'm ready to answer questions about the documents in your knowledge base. What would you like to know?"
+      content: "Hello! I'm ready to answer questions about the documents in your knowledge base. You can also upload your own documents using the 📎 button to ask questions about them!"
     }
   ])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set())
   const [conversationId, setConversationId] = useState<string | null>(null)
+  const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([])
+  const [isUploading, setIsUploading] = useState(false)
   const [isDarkMode, setIsDarkMode] = useState(() => {
     // Check if user has a saved preference, otherwise use system preference
     const savedTheme = localStorage.getItem('theme')
@@ -54,6 +61,15 @@ function App() {
     scrollToBottom()
   }, [messages])
 
+  // Fetch session documents when conversation ID changes
+  useEffect(() => {
+    if (conversationId) {
+      fetchSessionDocuments()
+    } else {
+      setUploadedDocuments([])
+    }
+  }, [conversationId])
+
   const toggleSources = (messageId: string) => {
     setExpandedSources(prev => {
       const newSet = new Set(prev)
@@ -79,27 +95,108 @@ function App() {
         
         if (response.ok) {
           setConversationId(null)
+          setUploadedDocuments([])
         }
       } else {
         // If no conversation ID, just reset locally
         setConversationId(null)
+        setUploadedDocuments([])
       }
       
       // Reset messages to just the welcome message
       setMessages([{
         id: 'welcome',
         type: 'bot',
-        content: "Hello! I'm ready to answer questions about the documents in your knowledge base. What would you like to know?"
+        content: "Hello! I'm ready to answer questions about the documents in your knowledge base. You can also upload your own documents using the 📎 button to ask questions about them!"
       }])
     } catch (error) {
       console.error('Error clearing conversation:', error)
       // Still reset locally even if the server call fails
       setConversationId(null)
+      setUploadedDocuments([])
       setMessages([{
         id: 'welcome',
         type: 'bot',
-        content: "Hello! I'm ready to answer questions about the documents in your knowledge base. What would you like to know?"
+        content: "Hello! I'm ready to answer questions about the documents in your knowledge base. You can also upload your own documents using the 📎 button to ask questions about them!"
       }])
+    }
+  }
+
+  const uploadDocument = async (file: File) => {
+    if (!file) return
+
+    setIsUploading(true)
+    
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (conversationId) {
+        formData.append('conversation_id', conversationId)
+      }
+
+      const response = await fetch('http://127.0.0.1:5000/upload-document', {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.status}`)
+      }
+
+      const data = await response.json()
+      
+      // Update conversation ID if provided by backend
+      if (data.conversation_id) {
+        setConversationId(data.conversation_id)
+      }
+
+      // Refresh uploaded documents list
+      await fetchSessionDocuments()
+
+      // Add upload success message
+      const uploadMessage: Message = {
+        id: `upload_${Date.now()}`,
+        type: 'bot',
+        content: `✅ Successfully uploaded "${file.name}". You can now ask questions about this document!`
+      }
+      setMessages(prev => [...prev, uploadMessage])
+
+    } catch (error) {
+      console.error('Upload error:', error)
+      
+      // Add upload error message
+      const errorMessage: Message = {
+        id: `upload_error_${Date.now()}`,
+        type: 'bot',
+        content: `❌ Failed to upload "${file.name}". Please try again.`,
+        isError: true
+      }
+      setMessages(prev => [...prev, errorMessage])
+    }
+
+    setIsUploading(false)
+  }
+
+  const fetchSessionDocuments = async () => {
+    if (!conversationId) return
+
+    try {
+      const response = await fetch(`http://127.0.0.1:5000/session-documents?conversation_id=${conversationId}`)
+      if (response.ok) {
+        const data = await response.json()
+        setUploadedDocuments(data.documents || [])
+      }
+    } catch (error) {
+      console.error('Error fetching session documents:', error)
+    }
+  }
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      uploadDocument(file)
+      // Reset the input
+      event.target.value = ''
     }
   }
 
@@ -217,6 +314,23 @@ function App() {
         </div>
         <h1>RAG Bot</h1>
         <p>Ask questions about your documents</p>
+
+        {/* Uploaded Documents Display */}
+        {uploadedDocuments.length > 0 && (
+          <div className="uploaded-docs-display">
+            <h4>📎 Uploaded Documents ({uploadedDocuments.length})</h4>
+            <div className="uploaded-docs-list">
+              {uploadedDocuments.map((doc, index) => (
+                <div key={index} className="uploaded-doc-item">
+                  📄 {doc.filename}
+                  <span className="upload-time">
+                    {new Date(doc.upload_time).toLocaleTimeString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
       
       <div className="chat-container" ref={chatContainerRef}>
@@ -249,9 +363,16 @@ function App() {
                     {message.sources && message.sources.length > 0 && (
                       <>
                         <h4>Source Files</h4>
-                        {message.sources.map((source, index) => (
-                          <div key={index} className="source-item">📄 {source}</div>
-                        ))}
+                        {message.sources.map((source, index) => {
+                          // Check if this source is an uploaded document
+                          const isUploaded = uploadedDocuments.some(doc => source.includes(doc.filename))
+                          return (
+                            <div key={index} className={`source-item ${isUploaded ? 'uploaded-source' : 'base-source'}`}>
+                              {isUploaded ? '📎' : '📄'} {source}
+                              {isUploaded && <span className="source-type">(uploaded)</span>}
+                            </div>
+                          )
+                        })}
                       </>
                     )}
                     {message.retrieved_docs && message.retrieved_docs.length > 0 && (
@@ -283,6 +404,21 @@ function App() {
       </div>
       
       <div className="input-container">
+        <input
+          type="file"
+          id="file-upload"
+          accept=".pdf,.txt,.md,.doc,.docx"
+          onChange={handleFileChange}
+          disabled={isUploading}
+          style={{ display: 'none' }}
+        />
+        <label 
+          htmlFor="file-upload" 
+          className={`attach-button ${isUploading ? 'uploading' : ''}`}
+          title="Attach document"
+        >
+          📎
+        </label>
         <input
           ref={inputRef}
           type="text"
